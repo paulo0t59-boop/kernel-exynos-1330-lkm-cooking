@@ -67,7 +67,7 @@ jobs:
           binutils binutils-aarch64-linux-gnu g++ cpio zip unzip \
           lz4 zstd xz-utils libncurses-dev libncurses5-dev \
           kmod rsync lld llvm clang dwarves pahole ccache \
-          device-tree-compiler zlib1g-dev libc6-dev-i386 cmake ninja-build
+          device-tree-compiler zlib1g-dev libc6-dev libc6-dev-i386 cmake ninja-build
 
       # --- ADVANCED CCACHE CONFIGURATION & DETERMINISM ---
       - name: Export ccache + determinism
