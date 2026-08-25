@@ -19,7 +19,7 @@ on:
         options:
           - llvm22
           - google-clang
-        default: llvm22
+        default: google-clang
       MAKE_RELEASE:
         description: 'Create a GitHub Release'
         required: true
@@ -124,7 +124,7 @@ jobs:
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@v1.0
         with:
-          swap-size-gb: 25
+          swap-size-gb: 10
 
       - name : Patch KSUN
         run: |
