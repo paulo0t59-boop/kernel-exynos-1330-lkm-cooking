@@ -29,7 +29,7 @@ on:
         description: 'Branch to build'
         type: string
         required: false
-        default: halium-13
+        default: main
 
 jobs:
   build-kernel:
@@ -121,8 +121,8 @@ jobs:
           echo "CC='ccache clang'" >> $GITHUB_ENV
           echo "CXX='ccache clang++'" >> $GITHUB_ENV
 
-      - name: Setup more Swap (for LTO)
-        uses: thejerrybao/setup-swap-space@v1
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@v1.0
         with:
           swap-size-gb: 25
 
