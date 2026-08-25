@@ -121,11 +121,6 @@ jobs:
           echo "CC='ccache clang'" >> $GITHUB_ENV
           echo "CXX='ccache clang++'" >> $GITHUB_ENV
 
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@v1.0
-        with:
-          swap-size-gb: 10
-
       - name : Patch KSUN
         run: |
           rm -fr KernelSU-Next
