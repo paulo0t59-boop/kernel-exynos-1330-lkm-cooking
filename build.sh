@@ -45,9 +45,7 @@ install_deps(){
         [ "${#available[@]}" = 0 ] && return 0
         info "Installing: ${available[*]}"
         sudo apt update && sudo apt install -y "${available[@]}" || die "apt failed"
-    else
         info "Unknown package manager -- install the kernel build dependencies yourself."
-    fi
 }
 
 [ -f Makefile ] && [ -d arch/arm64 ] || die "Run this from the kernel source root."
