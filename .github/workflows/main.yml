@@ -190,7 +190,7 @@ jobs:
           echo "===================================================="
 
           # Step A: Generate Config
-          make -j$(nproc --all) O=out m14x_defconfig custom_config
+          make -j$(nproc --all) O=out m14x_defconfig custom.config
 
           # Step B: Prepare
           make -j$(nproc --all) prepare O=out
