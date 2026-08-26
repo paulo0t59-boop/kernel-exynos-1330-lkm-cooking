@@ -1,8 +1,8 @@
 name: Build Kernel Action
 
 permissions:
-    contents: write
-    discussions: write
+  contents: write
+  discussions: write
 
 on:
   workflow_dispatch:
@@ -17,8 +17,8 @@ on:
         required: true
         type: choice
         options:
-          - llvm22
           - google-clang
+          - llvm22
         default: google-clang
       MAKE_RELEASE:
         description: 'Create a GitHub Release'
@@ -29,7 +29,7 @@ on:
         description: 'Branch to build'
         type: string
         required: false
-        default: main
+        default: halium-13
 
 jobs:
   build-kernel:
@@ -51,7 +51,7 @@ jobs:
           rmz_version: "3.1.1"
           testing: false
 
-      - name: Checkout Source (Minimal Branch)
+      - name: Checkout Source
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.BASE_BRANCH }}
@@ -62,19 +62,26 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex git lld llvm python3 \
-          git curl wget bc bison flex libssl-dev libelf-dev \
-          python3 python-is-python3 make gcc gcc-aarch64-linux-gnu \
-          binutils binutils-aarch64-linux-gnu g++ cpio zip unzip \
-          lz4 zstd xz-utils libncurses-dev libncurses5-dev \
-          kmod rsync lld llvm clang dwarves pahole ccache \
-          device-tree-compiler zlib1g-dev libc6-dev libc6-dev-i386 cmake ninja-build
+          curl wget libssl-dev libelf-dev python-is-python3 make gcc gcc-aarch64-linux-gnu \
+          binutils binutils-aarch64-linux-gnu g++ cpio zip unzip lz4 zstd xz-utils \
+          libncurses-dev libncurses5-dev kmod rsync clang dwarves pahole ccache \
+          device-tree-compiler zlib1g-dev libc6-dev-i386 cmake ninja-build
 
-      # --- ADVANCED CCACHE CONFIGURATION & DETERMINISM ---
+      - name: Install LLVM 22 (Conditional)
+        if: github.event.inputs.compiler == 'llvm22'
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22
+          sudo apt-get install -y clang-22 lld-22
+
+      # --- CCACHE CONFIGURATION ---
       - name: Export ccache + determinism
         if: github.event.inputs.cache == 'true'
         run: |
           CACHE_DIR="${{ github.workspace }}/.ccache"
           mkdir -p "$CACHE_DIR"
+          
           SETTINGS=(
             "CCACHE_DIR=$CACHE_DIR"
             "CCACHE_MAXSIZE=12G"
@@ -98,11 +105,6 @@ jobs:
             echo "$setting" >> $GITHUB_ENV
           done
 
-          if ccache --help 2>&1 | grep -q 'depend_mode'; then
-              export CCACHE_DEPEND=true
-              echo "CCACHE_DEPEND=true" >> "$GITHUB_ENV"
-          fi
-
       - name: Restore ccache
         if: github.event.inputs.cache == 'true'
         uses: actions/cache@v4
@@ -111,148 +113,82 @@ jobs:
           key: ccache-${{ runner.os }}-make-${{ github.event.inputs.compiler }}-${{ github.event.inputs.BASE_BRANCH }}-${{ github.run_id }}
           restore-keys: |
             ccache-${{ runner.os }}-make-${{ github.event.inputs.compiler }}-${{ github.event.inputs.BASE_BRANCH }}
-            ccache-${{ runner.os }}-make-${{ github.event.inputs.compiler }}-${{ github.event.inputs.BASE_BRANCH }}-
             ccache-${{ runner.os }}-make-${{ github.event.inputs.compiler }}-
 
-      - name: Ensure ccache is masked into PATH
-        if: github.event.inputs.cache == 'true'
+      - name: Run build.sh
         run: |
-          echo "/usr/lib/ccache" >> $GITHUB_PATH
-          echo "CC='ccache clang'" >> $GITHUB_ENV
-          echo "CXX='ccache clang++'" >> $GITHUB_ENV
-
-      - name : Patch KSUN
-        run: |
-          rm -fr KernelSU-Next
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
-
-      - name: Install LLVM 22 (Conditional)
-        if: github.event.inputs.compiler == 'llvm22'
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 22
-          sudo apt-get install -y clang-22 lld-22
-
-      - name: Build Kernel
-        run: |
-          # --- 1. ABI & KMI Settings (Nuke checks) ---
-          export ABI_DEFINITION=""
-          export KMI_SYMBOL_LIST_STRICT_MODE=0
-          export SKIP_ABI_CHECKS=1
-          export KMI_ENFORCE=0
-          export RECOMPILE_KERNEL=1
-          export SKIP_MRPROPER=0
-          export TRIM_NONLISTED_KMI=0
-          export KMI_ENFORCED=0
-          export KMI_SYMBOL_LIST_STRICT_MODE=0
-          export BUILD_CHECK_FREEZED_ABI=0
-
-          # --- 2. Device & Toolchain variables ---
-          export KERNEL_REPO="$GITHUB_WORKSPACE"
-          export KERNEL_ROOT="$GITHUB_WORKSPACE"
-          export GKI_ROOT="$GITHUB_WORKSPACE"
-          export DEVICE="m14x"
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export LANG=en_US.UTF-8
-          export LC_ALL=en_US.UTF-8
-          export LLVM=1
-          export LTO=thin
-          export LLVM_IAS=1
-          export TARGET_SOC=s5e8535
-          export SOC_NAME=s5e8535
-          export DTC_FLAGS="-@"
-          export PLATFORM_VERSION=13
-          export ANDROID_MAJOR_VERSION=t
-          export DEPMOD=depmod
-
-          # --- 3. Dynamic Toolchain Selection ---
+          chmod +x build.sh
+          
+          # If llvm22 selected via input, prepend system LLVM path
           if [ "${{ github.event.inputs.compiler }}" = "llvm22" ]; then
             export PATH=/usr/lib/llvm-22/bin:$PATH
-            export CC="ccache clang-22"
-            export HOSTCC="ccache clang-22"
-          else
-            # 1. Point to your specific Google Clang binary toolchain paths
-            export PATH=$(pwd)/toolchain/clang/host/linux-x86/clang-r450784d/bin:$PATH
-            export PATH=$(pwd)/toolchain/build/kernel/build-tools/path/linux-x86/:$PATH
-
-            # 2. Assign the compiler commands (letting the system resolve standard includes)
-            export CC="ccache clang"
-            export HOSTCC="ccache clang"
           fi
 
-          # --- 4. Internal Paths ---
-          OUTDIR="$KERNEL_ROOT/out"
+          ./build.sh
 
-          echo "===================================================="
-          echo "Configuring and Building for $DEVICE via ${{ github.event.inputs.compiler }}"
-          echo "===================================================="
-
-          # Step A: Generate Config
-          make -j$(nproc --all) O=out m14x_defconfig custom.config
-
-          # Step B: Prepare
-          make -j$(nproc --all) prepare O=out
-
-          # Step C: Compile Kernel
-          make -j$(nproc --all) O=out Image
-
-          # Print detailed ccache statistics at end of compile
           if [ "${{ github.event.inputs.cache }}" = "true" ]; then
             ccache -s
           fi
 
-          # Move compiled image to root workspace for easy access
-          if [ -f "out/arch/arm64/boot/Image" ]; then
-            cp out/arch/arm64/boot/Image ./Image
-          else
-            echo "ERRO: Image não encontrada em out/arch/arm64/boot/Image"
-            exit 1
-          fi
-
-      - name: Package Artifacts & AnyKernel3
+      - name: Package Staging & Flashable Zip
         run: |
           set -euo pipefail
           mkdir -p ${GITHUB_WORKSPACE}/artifacts
 
-          echo ">>> Cloning AnyKernel3..."
-          git clone --depth=1 https://github.com/prisma-droid-off/AnyKernel3.git ${GITHUB_WORKSPACE}/AnyKernel3
-
-          echo ">>> Copying Kernel Image to AnyKernel3..."
-          if [ -f "${GITHUB_WORKSPACE}/Image" ]; then
-            cp "${GITHUB_WORKSPACE}/Image" "${GITHUB_WORKSPACE}/AnyKernel3/"
+          # 1. Archive the populated Staging Directory (Kernel, stripped modules, DTBs)
+          STAGING_DIR="${GITHUB_WORKSPACE}/build/staging"
+          if [ -d "$STAGING_DIR" ]; then
+            echo ">>> Archiving Staging directory..."
+            tar -czvf "${GITHUB_WORKSPACE}/artifacts/kernel-staging-v${{ github.run_number }}.tar.gz" -C "$STAGING_DIR" .
           else
-            echo "[x] Kernel Image not found!"
+            echo "[x] Staging directory missing at $STAGING_DIR"
             exit 1
           fi
 
-          echo ">>> Creating Flashable Zip..."
+          # 2. Package AnyKernel3 Zip
+          echo ">>> Cloning AnyKernel3..."
+          git clone --depth=1 https://github.com/prisma-droid-off/AnyKernel3.git ${GITHUB_WORKSPACE}/AnyKernel3
+
+          echo ">>> Injecting Image into AnyKernel3..."
+          if [ -f "$STAGING_DIR/boot/Image" ]; then
+            cp "$STAGING_DIR/boot/Image" "${GITHUB_WORKSPACE}/AnyKernel3/"
+          else
+            echo "[x] Kernel Image missing in Staging boot!"
+            exit 1
+          fi
+
           cd ${GITHUB_WORKSPACE}/AnyKernel3
           rm -rf .git README.md
 
-          # Corrected input value matching the top level variable string definition
-          AK3_ZIP_NAME="v${{ github.run_number }}-hallium_13-m14x-kernel.zip"
+          AK3_ZIP_NAME="v${{ github.run_number }}-halium_13-m14x-kernel.zip"
           zip -r9 "${GITHUB_WORKSPACE}/artifacts/${AK3_ZIP_NAME}" ./*
-          echo "AnyKernel3 Flashable Zip created: ${AK3_ZIP_NAME}"
+          echo ">>> AnyKernel3 Flashable Zip generated: ${AK3_ZIP_NAME}"
+
+      - name: Upload Artifacts (Action Run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-artifacts-v${{ github.run_number }}
+          path: ${{ github.workspace }}/artifacts/*
 
       - name: GitHub Release
         if: github.event.inputs.MAKE_RELEASE == 'true'
         uses: softprops/action-gh-release@v3
         with:
-          name: Prisma Kernels - Run ${{ github.run_number }} ${{ github.sha }}
+          name: Prisma Kernels - Run ${{ github.run_number }} (${{ github.sha }})
           tag_name: v${{ github.run_number }}-${{ github.sha }}
           body: |
             > [!WARNING]
-            > **DISCLAIMER:** This kernel is for experimental purposes. Flash at your own risk! 
+            > **DISCLAIMER:** Experimental build. Flash at your own risk!
 
-            *Compiled using: ${{ github.event.inputs.compiler }}*
-            *This release was automatically generated by GitHub Actions.*
+            * **Compiler:** `${{ github.event.inputs.compiler }}`
+            * **Branch:** `${{ github.event.inputs.BASE_BRANCH }}`
+            * **Included Artifacts:** `AnyKernel3 Zip` & `Stripped Kernel Staging Tarball`
           files: |
             ${{ github.workspace }}/artifacts/*.zip
+            ${{ github.workspace }}/artifacts/*.tar.gz
         env:
-            GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Cleanup
         if: always()
-        run: rm -rf out/
+        run: rm -rf build/ out/
