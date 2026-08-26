@@ -29,7 +29,7 @@ on:
         description: 'Branch to build'
         type: string
         required: false
-        default: halium-13
+        default: main
 
 jobs:
   build-kernel:
