@@ -118,6 +118,11 @@ jobs:
             ccache-${{ runner.os }}-make-${{ github.event.inputs.compiler }}-${{ github.event.inputs.BASE_BRANCH }}
             ccache-${{ runner.os }}-make-${{ github.event.inputs.compiler }}-
 
+      - name : Patch KSUN
+        run: |
+          rm -fr KernelSU-Next
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+
       - name: Run build.sh
         run: |
           chmod +x build.sh
