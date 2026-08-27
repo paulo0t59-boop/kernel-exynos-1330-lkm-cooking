@@ -1,4 +1,4 @@
-Name: Build Kernel Action
+name: Build Kernel Action
 
 permissions:
   contents: write
