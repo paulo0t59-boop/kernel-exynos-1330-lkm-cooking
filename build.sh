@@ -7,7 +7,7 @@ export KERNEL_ROOT="$(pwd)"
 DEFCONFIG="m14x_defconfig"      
 EXTRA_CONFIGS=(custom.config)               
 KERNEL_IMAGE="Image"           
-USE_OUT_DIR=0                  
+USE_OUT_DIR=1                  
 MENUCONFIG=0                   # 0 = skip the menuconfig GUI
 export KBUILD_BUILD_USER="@prisma_droid"
 export DEVICE="m14x"
@@ -65,8 +65,8 @@ BUILD_OPTIONS=(
     ARCH=arm64
     LLVM=1
     LLVM_IAS=1
-    HOSTCC=gcc
-    HOSTCXX=g++
+    CC=clang
+    HOSTCC=clang
 )
 
 if [ "${USE_OUT_DIR}" = 1 ]; then
@@ -77,8 +77,6 @@ else
     BUILD_ROOT="${KERNEL_ROOT}"
     BOOT_DIR="${KERNEL_ROOT}/arch/arm64/boot"
 fi
-
-STAGING_DIR="${KERNEL_ROOT}/build/staging"
 
 build_kernel(){
     info "Kernel $(make kernelversion) | defconfig: ${DEFCONFIG}"
@@ -91,31 +89,14 @@ build_kernel(){
     # 1. Build Kernel, Modules, and Device Trees
     make "${BUILD_OPTIONS[@]}" "${KERNEL_IMAGE}" modules dtbs || die "Build failed"
 
-    # 2. Prepare Clean Staging Directory
-    rm -rf "${STAGING_DIR}"
-    mkdir -p "${STAGING_DIR}/boot/dtbs"
-
-    # 3. Copy Kernel Image
-    cp "${BOOT_DIR}/${KERNEL_IMAGE}" "${STAGING_DIR}/boot/"
-
-    # 4. Install & Strip Modules to Staging
-    make "${BUILD_OPTIONS[@]}" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="${STAGING_DIR}" modules_install || die "Modules install failed"
-
-    # 5. Install DTBs and DTBOs to Staging
-    find "${BOOT_DIR}" -type f \( -name "*.dtb" -o -name "*.dtbo" \) -exec cp {} "${STAGING_DIR}/boot/dtbs/" \; 2>/dev/null || true
-
-    # 6. Copy System.map and .config to Staging
-    if [ -f "${BUILD_ROOT}/System.map" ]; then
-        cp "${BUILD_ROOT}/System.map" "${STAGING_DIR}/boot/System.map"
-    else
-        die "System.map not found at ${BUILD_ROOT}/System.map"
-    fi
+    # 2. Install Modules into out/
+    info "Installing modules to out directory..."
+    make "${BUILD_OPTIONS[@]}" INSTALL_MOD_PATH="${BUILD_ROOT}" modules_install || die "Modules install failed"
 
     if [ -f "${BUILD_ROOT}/.config" ]; then
-        cp "${BUILD_ROOT}/.config" "${STAGING_DIR}/boot/config"
+        cp "${BUILD_ROOT}/.config" "${BOOT_DIR}/config"
     fi
 
-    info "Done -> Staging successfully created at: ${STAGING_DIR}"
+    info "Done -> Build and out/ directory preparation successfully completed."
 }
 
-build_kernel

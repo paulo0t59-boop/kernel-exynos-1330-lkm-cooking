@@ -1,4 +1,4 @@
-name: Build Kernel Action
+Name: Build Kernel Action
 
 permissions:
   contents: write
@@ -12,14 +12,6 @@ on:
         required: true
         type: boolean
         default: true
-      compiler:
-        description: 'Compiler Toolchain'
-        required: true
-        type: choice
-        options:
-          - google-clang
-          - llvm22
-        default: google-clang
       MAKE_RELEASE:
         description: 'Create a GitHub Release'
         required: true
@@ -66,14 +58,6 @@ jobs:
           binutils binutils-aarch64-linux-gnu g++ cpio zip unzip lz4 zstd xz-utils \
           libncurses-dev kmod rsync clang dwarves pahole ccache \
           device-tree-compiler zlib1g-dev libc6-dev-i386 cmake ninja-build
-
-      - name: Install LLVM 22 (Conditional)
-        if: github.event.inputs.compiler == 'llvm22'
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 22
-          sudo apt-get install -y clang-22 lld-22
 
       # --- CCACHE CONFIGURATION ---
       - name: Export ccache + determinism
@@ -127,38 +111,32 @@ jobs:
         run: |
           chmod +x build.sh
           
-          if [ "${{ github.event.inputs.compiler }}" = "llvm22" ]; then
-            export PATH=/usr/lib/llvm-22/bin:$PATH
-          fi
-
           ./build.sh
 
           if [ "${{ github.event.inputs.cache }}" = "true" ]; then
             ccache -s
           fi
 
-      - name: Package Staging & Flashable Zip
+      - name: Package Out Directory & Flashable Zip
         run: |
           set -euo pipefail
           mkdir -p ${GITHUB_WORKSPACE}/artifacts
 
-          STAGING_DIR="${GITHUB_WORKSPACE}/build/staging"
-          if [ -d "$STAGING_DIR" ]; then
-            echo ">>> Archiving Staging directory..."
-            tar -czvf "${GITHUB_WORKSPACE}/artifacts/kernel-staging-v${{ github.run_number }}.tar.gz" -C "$STAGING_DIR" .
-          else
-            echo "[x] Staging directory missing at $STAGING_DIR"
-            exit 1
+          OUT_DIR="${GITHUB_WORKSPACE}/out"
+          if [ -d "$OUT_DIR" ]; then
+            echo ">>> Compacting entire out/ directory..."
+            tar --exclude='*.o' --exclude='*.cmd' -czvf "${GITHUB_WORKSPACE}/artifacts/kernel-out-v${{ github.run_number }}.tar.gz" -C "${GITHUB_WORKSPACE}" out
           fi
 
           echo ">>> Cloning AnyKernel3..."
           git clone --depth=1 https://github.com/prisma-droid-off/AnyKernel3.git ${GITHUB_WORKSPACE}/AnyKernel3
 
           echo ">>> Injecting Image into AnyKernel3..."
-          if [ -f "$STAGING_DIR/boot/Image" ]; then
-            cp "$STAGING_DIR/boot/Image" "${GITHUB_WORKSPACE}/AnyKernel3/"
+          KERNEL_IMG_PATH="$OUT_DIR/arch/arm64/boot/Image"
+          if [ -f "$KERNEL_IMG_PATH" ]; then
+            cp "$KERNEL_IMG_PATH" "${GITHUB_WORKSPACE}/AnyKernel3/"
           else
-            echo "[x] Kernel Image missing in Staging boot!"
+            echo "[x] Kernel Image missing at $KERNEL_IMG_PATH!"
             exit 1
           fi
 
