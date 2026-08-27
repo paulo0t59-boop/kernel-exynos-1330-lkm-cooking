@@ -37,15 +37,23 @@ DEB_PKGS=(build-essential bc bison flex pkg-config git curl tar xz-utils zip unz
 
 install_deps(){
     local missing=() available=() p
-        for p in "${DEB_PKGS[@]}"; do
-            [ "$(dpkg-query -W -f='${db:Status-Status}' "$p" 2>/dev/null)" = installed ] || missing+=("$p")
-        done
-        [ "${#missing[@]}" = 0 ] && return 0
-        for p in "${missing[@]}"; do apt-cache show "$p" &>/dev/null && available+=("$p"); done
-        [ "${#available[@]}" = 0 ] && return 0
-        info "Installing: ${available[*]}"
-        sudo apt update && sudo apt install -y "${available[@]}" || die "apt failed"
-        info "Unknown package manager -- install the kernel build dependencies yourself."
+    if ! command -v dpkg &>/dev/null; then
+        info "Non-Debian system detected -- ensure build dependencies are installed manually."
+        return 0
+    fi
+
+    for p in "${DEB_PKGS[@]}"; do
+        [ "$(dpkg-query -W -f='${db:Status-Status}' "$p" 2>/dev/null)" = installed ] || missing+=("$p")
+    done
+    [ "${#missing[@]}" = 0 ] && return 0
+
+    for p in "${missing[@]}"; do 
+        apt-cache show "$p" &>/dev/null && available+=("$p")
+    done
+    [ "${#available[@]}" = 0 ] && return 0
+
+    info "Installing missing dependencies: ${available[*]}"
+    sudo apt update && sudo apt install -y "${available[@]}" || die "apt failed"
 }
 
 [ -f Makefile ] && [ -d arch/arm64 ] || die "Run this from the kernel source root."
@@ -62,9 +70,11 @@ BUILD_OPTIONS=(
 )
 
 if [ "${USE_OUT_DIR}" = 1 ]; then
-    BUILD_OPTIONS+=(O="${KERNEL_ROOT}/out")
-    BOOT_DIR="${KERNEL_ROOT}/out/arch/arm64/boot"
+    BUILD_ROOT="${KERNEL_ROOT}/out"
+    BUILD_OPTIONS+=(O="${BUILD_ROOT}")
+    BOOT_DIR="${BUILD_ROOT}/arch/arm64/boot"
 else
+    BUILD_ROOT="${KERNEL_ROOT}"
     BOOT_DIR="${KERNEL_ROOT}/arch/arm64/boot"
 fi
 
@@ -73,23 +83,39 @@ STAGING_DIR="${KERNEL_ROOT}/build/staging"
 build_kernel(){
     info "Kernel $(make kernelversion) | defconfig: ${DEFCONFIG}"
     make "${BUILD_OPTIONS[@]}" "${DEFCONFIG}" "${EXTRA_CONFIGS[@]}" || die "Failed to write .config"
+    
     if [ "${MENUCONFIG}" = 1 ]; then
         make "${BUILD_OPTIONS[@]}" menuconfig
     fi
+
     # 1. Build Kernel, Modules, and Device Trees
     make "${BUILD_OPTIONS[@]}" "${KERNEL_IMAGE}" modules dtbs || die "Build failed"
+
     # 2. Prepare Clean Staging Directory
     rm -rf "${STAGING_DIR}"
-    mkdir -p "${STAGING_DIR}/boot"
+    mkdir -p "${STAGING_DIR}/boot/dtbs"
+
     # 3. Copy Kernel Image
     cp "${BOOT_DIR}/${KERNEL_IMAGE}" "${STAGING_DIR}/boot/"
+
     # 4. Install & Strip Modules to Staging
     make "${BUILD_OPTIONS[@]}" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="${STAGING_DIR}" modules_install || die "Modules install failed"
+
     # 5. Install DTBs and DTBOs to Staging
-    mkdir -p "${STAGING_DIR}/boot/dtbs"
     find "${BOOT_DIR}" -type f \( -name "*.dtb" -o -name "*.dtbo" \) -exec cp {} "${STAGING_DIR}/boot/dtbs/" \; 2>/dev/null || true
 
-    info "Done -> Staging created at: ${STAGING_DIR}"
+    # 6. Copy System.map and .config to Staging
+    if [ -f "${BUILD_ROOT}/System.map" ]; then
+        cp "${BUILD_ROOT}/System.map" "${STAGING_DIR}/boot/System.map"
+    else
+        die "System.map not found at ${BUILD_ROOT}/System.map"
+    fi
+
+    if [ -f "${BUILD_ROOT}/.config" ]; then
+        cp "${BUILD_ROOT}/.config" "${STAGING_DIR}/boot/config"
+    fi
+
+    info "Done -> Staging successfully created at: ${STAGING_DIR}"
 }
 
 build_kernel
