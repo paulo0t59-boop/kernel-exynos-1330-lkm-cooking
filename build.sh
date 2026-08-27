@@ -85,8 +85,10 @@ build_kernel(){
     cp "${BOOT_DIR}/${KERNEL_IMAGE}" "${STAGING_DIR}/boot/"
     # 4. Install & Strip Modules to Staging
     make "${BUILD_OPTIONS[@]}" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="${STAGING_DIR}" modules_install || die "Modules install failed"
-    # 5. Install DTBs to Staging
-    make "${BUILD_OPTIONS[@]}" INSTALL_DTBS_PATH="${STAGING_DIR}/boot/dtbs" dtbs_install || die "DTB install failed"
+    # 5. Install DTBs and DTBOs to Staging
+    mkdir -p "${STAGING_DIR}/boot/dtbs"
+    find "${BOOT_DIR}" -type f \( -name "*.dtb" -o -name "*.dtbo" \) -exec cp {} "${STAGING_DIR}/boot/dtbs/" \; 2>/dev/null || true
+
     info "Done -> Staging created at: ${STAGING_DIR}"
 }
 

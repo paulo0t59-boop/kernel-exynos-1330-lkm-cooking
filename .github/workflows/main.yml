@@ -170,25 +170,6 @@ jobs:
           name: kernel-build-artifacts-v${{ github.run_number }}
           path: ${{ github.workspace }}/artifacts/*
 
-      - name: GitHub Release
-        if: github.event.inputs.MAKE_RELEASE == 'true'
-        uses: softprops/action-gh-release@v3
-        with:
-          name: Prisma Kernels - Run ${{ github.run_number }} (${{ github.sha }})
-          tag_name: v${{ github.run_number }}-${{ github.sha }}
-          body: |
-            > [!WARNING]
-            > **DISCLAIMER:** Experimental build. Flash at your own risk!
-
-            * **Compiler:** `${{ github.event.inputs.compiler }}`
-            * **Branch:** `${{ github.event.inputs.BASE_BRANCH }}`
-            * **Included Artifacts:** `AnyKernel3 Zip` & `Stripped Kernel Staging Tarball`
-          files: |
-            ${{ github.workspace }}/artifacts/*.zip
-            ${{ github.workspace }}/artifacts/*.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-
       - name: Cleanup
         if: always()
         run: rm -rf build/ out/
