@@ -52,7 +52,7 @@ jobs:
           testing: false
 
       - name: Checkout Source
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.BASE_BRANCH }}
           submodules: 'recursive'
@@ -64,7 +64,7 @@ jobs:
           sudo apt-get install -y bc bison build-essential flex git lld llvm python3 \
           curl wget libssl-dev libelf-dev python-is-python3 make gcc gcc-aarch64-linux-gnu \
           binutils binutils-aarch64-linux-gnu g++ cpio zip unzip lz4 zstd xz-utils \
-          libncurses-dev libncurses5-dev kmod rsync clang dwarves pahole ccache \
+          libncurses-dev kmod rsync clang dwarves pahole ccache \
           device-tree-compiler zlib1g-dev libc6-dev-i386 cmake ninja-build
 
       - name: Install LLVM 22 (Conditional)
@@ -105,6 +105,9 @@ jobs:
             echo "$setting" >> $GITHUB_ENV
           done
 
+          # Enable ccache globally in PATH
+          echo "/usr/lib/ccache" >> $GITHUB_PATH
+
       - name: Restore ccache
         if: github.event.inputs.cache == 'true'
         uses: actions/cache@v4
@@ -119,7 +122,6 @@ jobs:
         run: |
           chmod +x build.sh
           
-          # If llvm22 selected via input, prepend system LLVM path
           if [ "${{ github.event.inputs.compiler }}" = "llvm22" ]; then
             export PATH=/usr/lib/llvm-22/bin:$PATH
           fi
@@ -135,7 +137,6 @@ jobs:
           set -euo pipefail
           mkdir -p ${GITHUB_WORKSPACE}/artifacts
 
-          # 1. Archive the populated Staging Directory (Kernel, stripped modules, DTBs)
           STAGING_DIR="${GITHUB_WORKSPACE}/build/staging"
           if [ -d "$STAGING_DIR" ]; then
             echo ">>> Archiving Staging directory..."
@@ -145,7 +146,6 @@ jobs:
             exit 1
           fi
 
-          # 2. Package AnyKernel3 Zip
           echo ">>> Cloning AnyKernel3..."
           git clone --depth=1 https://github.com/prisma-droid-off/AnyKernel3.git ${GITHUB_WORKSPACE}/AnyKernel3
 
