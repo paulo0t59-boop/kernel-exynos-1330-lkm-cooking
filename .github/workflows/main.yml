@@ -57,9 +57,9 @@ jobs:
           curl wget libssl-dev libelf-dev python-is-python3 make gcc gcc-aarch64-linux-gnu \
           binutils binutils-aarch64-linux-gnu g++ cpio zip unzip lz4 zstd xz-utils \
           libncurses-dev kmod rsync clang dwarves pahole ccache \
-          device-tree-compiler zlib1g-dev libc6-dev-i386 cmake ninja-build
+          device-tree-compiler zlib1g-dev libc6-dev-i386 cmake ninja-build \
+          pkg-config perl libyaml-dev
 
-      # --- CCACHE CONFIGURATION ---
       - name: Export ccache + determinism
         if: github.event.inputs.cache == 'true'
         run: |
@@ -102,16 +102,61 @@ jobs:
             ccache-${{ runner.os }}-make-${{ github.event.inputs.compiler }}-${{ github.event.inputs.BASE_BRANCH }}
             ccache-${{ runner.os }}-make-${{ github.event.inputs.compiler }}-
 
-      - name : Patch KSUN
+      - name: Patch KSUN
         run: |
           rm -fr KernelSU-Next
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
 
-      - name: Run build.sh
+      - name: Build Kernel
         run: |
-          chmod +x build.sh
+          set -euo pipefail
           
-          ./build.sh
+          # Environment variables
+          export KERNEL_ROOT="${GITHUB_WORKSPACE}"
+          export KBUILD_BUILD_USER="@prisma_droid"
+          export DEVICE="m14x"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LANG=en_US.UTF-8
+          export LC_ALL=en_US.UTF-8
+          export LLVM=1
+          export LTO=thin
+          export LLVM_IAS=1
+          export TARGET_SOC=s5e8535
+          export SOC_NAME=s5e8535
+          export DTC_FLAGS="-@"
+          export PLATFORM_VERSION=13
+          export ANDROID_MAJOR_VERSION=t
+          export DEPMOD=depmod
+          
+          export PATH="${KERNEL_ROOT}/toolchain/clang/host/linux-x86/clang-r450784d/bin:$PATH"
+          export PATH="${KERNEL_ROOT}/toolchain/build/kernel/build-tools/path/linux-x86/:$PATH"
+          
+          BUILD_ROOT="${KERNEL_ROOT}/out"
+          BOOT_DIR="${BUILD_ROOT}/arch/arm64/boot"
+          
+          BUILD_OPTIONS=(
+            -j"$(nproc)"
+            ARCH=arm64
+            LLVM=1
+            LLVM_IAS=1
+            CC=clang
+            HOSTCC=clang
+            O="${BUILD_ROOT}"
+          )
+
+          echo ">>> Generating defconfig..."
+          make "${BUILD_OPTIONS[@]}" m14x_defconfig custom.config
+          
+          echo ">>> Building Kernel, Modules, and Device Trees..."
+          make "${BUILD_OPTIONS[@]}" Image modules dtbs
+          
+          echo ">>> Installing Modules to out directory..."
+          make "${BUILD_OPTIONS[@]}" INSTALL_MOD_PATH="${BUILD_ROOT}" modules_install
+
+          if [ -f "${BUILD_ROOT}/.config" ]; then
+            cp "${BUILD_ROOT}/.config" "${BOOT_DIR}/config"
+          fi
 
           if [ "${{ github.event.inputs.cache }}" = "true" ]; then
             ccache -s
