@@ -111,8 +111,14 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Environment variables
+          # Environment variables mapped to AOSP standards
           export KERNEL_ROOT="${GITHUB_WORKSPACE}"
+          export OUT_DIR="${KERNEL_ROOT}/out"
+          export DIST_DIR="${OUT_DIR}/dist"
+          export MODULES_STAGING_DIR="${OUT_DIR}/staging"
+          export MODULES_PRIVATE_DIR="${OUT_DIR}/private"
+          export UNSTRIPPED_DIR="${DIST_DIR}/unstripped"
+          
           export KBUILD_BUILD_USER="@prisma_droid"
           export DEVICE="m14x"
           export ARCH=arm64
@@ -132,8 +138,7 @@ jobs:
           export PATH="${KERNEL_ROOT}/toolchain/clang/host/linux-x86/clang-r450784d/bin:$PATH"
           export PATH="${KERNEL_ROOT}/toolchain/build/kernel/build-tools/path/linux-x86/:$PATH"
           
-          BUILD_ROOT="${KERNEL_ROOT}/out"
-          BOOT_DIR="${BUILD_ROOT}/arch/arm64/boot"
+          BOOT_DIR="${OUT_DIR}/arch/arm64/boot"
           
           BUILD_OPTIONS=(
             -j"$(nproc)"
@@ -142,7 +147,7 @@ jobs:
             LLVM_IAS=1
             CC=clang
             HOSTCC=clang
-            O="${BUILD_ROOT}"
+            O="${OUT_DIR}"
           )
 
           echo ">>> Generating defconfig..."
@@ -151,11 +156,11 @@ jobs:
           echo ">>> Building Kernel, Modules, and Device Trees..."
           make "${BUILD_OPTIONS[@]}" Image modules dtbs
           
-          echo ">>> Installing Modules to out directory..."
-          make "${BUILD_OPTIONS[@]}" INSTALL_MOD_PATH="${BUILD_ROOT}" modules_install
+          echo ">>> Installing Modules to AOSP staging directory..."
+          make "${BUILD_OPTIONS[@]}" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" modules_install
 
-          if [ -f "${BUILD_ROOT}/.config" ]; then
-            cp "${BUILD_ROOT}/.config" "${BOOT_DIR}/config"
+          if [ -f "${OUT_DIR}/.config" ]; then
+            cp "${OUT_DIR}/.config" "${BOOT_DIR}/config"
           fi
 
           if [ "${{ github.event.inputs.cache }}" = "true" ]; then
@@ -169,8 +174,8 @@ jobs:
 
           OUT_DIR="${GITHUB_WORKSPACE}/out"
           if [ -d "$OUT_DIR" ]; then
-            echo ">>> Compacting entire out/ directory..."
-            tar --exclude='*.o' --exclude='*.cmd' -czvf "${GITHUB_WORKSPACE}/artifacts/kernel-out-v${{ github.run_number }}.tar.gz" -C "${GITHUB_WORKSPACE}" out
+            echo ">>> Compacting entire out/ directory with max XZ compression..."
+            env XZ_OPT=-9 tar --exclude='*.o' --exclude='*.cmd' -cJvf "${GITHUB_WORKSPACE}/artifacts/kernel-out-v${{ github.run_number }}.tar.xz" -C "${GITHUB_WORKSPACE}" out
           fi
 
           echo ">>> Cloning AnyKernel3..."
